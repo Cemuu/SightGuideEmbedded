@@ -5,9 +5,11 @@
 #include <Arduino.h>
 #include <esp_camera.h>
 #include <thijs_rplidar.h>
+#include <lidar.h>
 #include <driver/i2s.h>
 #include <BluetoothSerial.h>
 #include <Button2.h>
+#include <LittleFS.h>
 
 // camera
 #define XCLK_CAM 38  // External clock
@@ -54,53 +56,11 @@ BluetoothSerial SerialBT;
 // function declarations
 
 //**LiDAR begin
-struct lidarMotorHandler
-{
-  const uint8_t pin;
-  const uint32_t freq; // Hz
-  // const uint8_t res; //bits (commented because i want to keep this thing simple, and changing variable sizes (templates?) is not
-  const uint8_t channel; // an ESP32 ledc specific thing
-  const bool activeHigh; // depends on your specific hardware setup (CTRL_MOTO should be driven to the same voltage as 5V_MOTO (which can range from 5 to 9V), i think)
-  lidarMotorHandler(const uint8_t pin, const bool activeHigh = true, const uint32_t freq = 500, /*const uint8_t res=8,*/ const uint8_t channel = 0) : pin(pin), freq(freq), /*res(res),*/ channel(channel), activeHigh(activeHigh) {}
-  void init()
-  {
-    ledcSetup(channel, freq, 8);
-    ledcAttachPin(pin, channel);
-    setPWM(0);
-  }
-  inline void setPWM(uint8_t newPWMval) { ledcWrite(channel, activeHigh ? newPWMval : (255 - newPWMval)); }
-};
 lidarMotorHandler motorHandler(MOTO_CTRL);
 RPlidar lidar(Serial2);
-bool keepSpinning = true;
+//keepSpinning = true;
 // uint16_t debugPrintCounter = 0;
 // const uint16_t debugPrintThreshold = 48; // print data every (this many) datapoints (if you are getting CRC errors, there may be buffer overflow, try setting this to like 48+ (or uncommenting printing entirely))
-uint32_t debugPrintTimer;
-const uint32_t dubugPrintInterval = 5000; // micros between prints
-void dataHandler(RPlidar *lidarPtr, uint16_t dist, uint16_t angle_q6, uint8_t newRotFlag, int8_t quality)
-{
-  float distFloat = dist;                        // unit is mm directly
-  float angleDegreesFloat = angle_q6 * 0.015625; // angle comes in 'q6' format, so divide by (1<<6)=64 (or multiply by 1/64) (or bitshift to the right by 6) to get angle in degrees
-  // alternatively, you could use bitshifting to divide the angleDegreesFloat slightly faster. Something like:
-  //  float angleDegreesFloat = angle_q6;   angleDegreesFloat = (float&)(((uint32_t&)angleDegreesFloat)-=(((uint32_t)6)<<23)); // subtract 6 from the float's exponent, thereby dividing it by 2^6=64
-  //
-  //  debugPrintCounter++;
-  //  if(debugPrintCounter >= debugPrintThreshold) {  // (debugPrintCounter >= (lidarPtr->lidarSerial.available())) {  // dynamic?
-  //    debugPrintCounter = 0;
-  if ((micros() - debugPrintTimer) >= dubugPrintInterval)
-  { // (debugPrintCounter >= (lidarPtr->lidarSerial.available())) {  // dynamic?
-    debugPrintTimer = micros();
-    //// printing all the data is too slow (there's too much data), so this may cause packet loss (due to buffer overflow).
-    // Serial.println(lidarPtr->lidarSerial.available());
-    // Serial.print("DH: "); Serial.print(dist); Serial.print("  \t"); Serial.print(angle_q6); Serial.print('\t'); Serial.print(newRotFlag); Serial.print('\t'); Serial.println(quality);
-    String dataToPrint = String(millis()) + '\t';
-    dataToPrint += String(dist) + "  \t" + String(angle_q6);
-    dataToPrint += '\t' + String(lidarPtr->packetCount) + '\t' + String(lidarPtr->rotationCount);
-    dataToPrint += '\t' + String(newRotFlag) + '\t' + String(quality);
-    dataToPrint += '\t' + String(lidarPtr->rawAnglePerMillisecond()) + '\t' + String(lidarPtr->RPM());
-    Serial.println(dataToPrint);
-  }
-}
 //**LiDAR end
 
 //**Camera begin
@@ -228,7 +188,6 @@ void setup()
 void loop()
 {
   // put your main code here, to run repeatedly:
-
   // if (SerialBT.available())
   // {
   //   Serial.write(SerialBT.read());
